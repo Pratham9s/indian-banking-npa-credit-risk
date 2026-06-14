@@ -415,8 +415,24 @@ elif page == "🎯 Credit Scorecard":
 
         # Predict
         pred_df    = pd.DataFrame([input_dict])[feature_cols]
-        pd_score   = xgb_model.predict_proba(pred_df)[0][1]
-        risk_score = 1 - pd_score
+        raw_prob   = xgb_model.predict_proba(pred_df)[0][1]  # P(creditworthy)
+        raw_risk   = 1 - raw_prob
+
+        # Rescale: model is heavily skewed toward extremes due to 74% creditworthy
+        # training distribution. Apply sigmoid rescaling to spread across P1-P4.
+        # Calibrated so: raw<0.05→P1, raw 0.05-0.3→P2, raw 0.3-0.6→P3, raw>0.6→P4
+        import math
+        def rescale_risk(r):
+            # Stretch the middle range using log-odds transformation
+            if r <= 0: return 0.01
+            if r >= 1: return 0.99
+            log_odds = math.log(r / (1 - r))
+            # Shift center and compress extremes
+            adjusted = 1 / (1 + math.exp(-(log_odds + 1.5) * 0.7))
+            return float(np.clip(adjusted, 0.005, 0.995))
+
+        risk_score = rescale_risk(raw_risk)
+        pd_score   = 1 - risk_score
 
         # ── Rule-based override layer (mirrors real bank credit policy) ──
         overrides = []
