@@ -306,7 +306,7 @@ Be specific — mention actual policy names, event dates, sector-wise stress whe
                     headers = {"Content-Type": "application/json"}
                     payload = {
                         "contents": [{"parts": [{"text": prompt}]}],
-                        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1000}
+                        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2000}
                     }
                     resp = requests.post(f"{url}?key={GEMINI_KEY}", headers=headers, json=payload, timeout=30)
                     resp.raise_for_status()
