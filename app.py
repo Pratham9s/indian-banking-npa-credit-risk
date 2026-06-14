@@ -487,9 +487,9 @@ elif page == "🎯 Credit Scorecard":
             pred_class = max(pred_class, 2)
             overrides.append(f"⚠️ CIBIL {credit_score} below recommended (650) — minimum P3")
 
-        # P1 vs P2 split — only trigger on clearly elevated signals
+        # P1 vs P2 split — only trigger on clearly stressed signals
         if pred_class == 0:
-            if enq_l6m > 6 or cc_util > 70 or missed_pmnt >= 2:
+            if enq_l6m > 8 or cc_util > 80 or missed_pmnt >= 3:
                 pred_class = 1
                 overrides.append("⚠️ Elevated enquiries/utilization — P2 (approve with monitoring)")
 
