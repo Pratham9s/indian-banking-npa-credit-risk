@@ -372,6 +372,7 @@ elif page == "🎯 Credit Scorecard":
         with c3:
             st.markdown("**Loan Details**")
             loan_type = st.selectbox("Product Enquired", ["PL", "AL", "HL", "CC", "others"])
+            loan_amount = st.number_input("Loan Amount Requested (₹)", 10000, 10000000, 500000, step=10000)
             existing_loans = st.slider("Existing Active Loans", 0, 10, 2)
             enq_l6m  = st.slider("Enquiries Last 6 Months", 0, 15, 2)
             enq_l12m = st.slider("Enquiries Last 12 Months", 0, 20, 3)
@@ -434,6 +435,9 @@ elif page == "🎯 Credit Scorecard":
                 st.metric("Risk Band", band.split("—")[0].strip())
             with r4:
                 st.metric("ECL Stage", stage)
+
+            lti = loan_amount / income if income > 0 else 0
+            st.caption(f"Loan Amount: ₹{loan_amount:,.0f} | Monthly Income: ₹{income:,.0f} | Loan-to-Income Ratio: {lti:.1f}x")
 
             st.markdown(f"""
             <div class="ecl-box">
