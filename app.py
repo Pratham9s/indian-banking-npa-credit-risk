@@ -487,26 +487,28 @@ elif page == "🎯 Credit Scorecard":
             pred_class = max(pred_class, 2)
             overrides.append(f"⚠️ CIBIL {credit_score} below recommended (650) — minimum P3")
 
-        # P1 vs P2 split — use enquiries and utilization to separate
+        # P1 vs P2 split — only trigger on genuinely elevated signals
         if pred_class == 0:
-            if enq_l6m > 3 or cc_util > 50 or missed_pmnt >= 1:
-                pred_class = 1  # Near-prime — approve with monitoring
-                overrides.append("⚠️ Good profile but elevated enquiries/utilization — upgraded to P2 (approve with monitoring)")
+            if enq_l6m > 5 or cc_util > 60 or missed_pmnt >= 2:
+                pred_class = 1
+                overrides.append("⚠️ Good profile but elevated enquiries/utilization — P2 (approve with monitoring)")
 
         # P3 vs P4 split
         if pred_class == 3:
             if credit_score >= 620 and missed_pmnt < 4 and emi_to_income < 0.50 and num_60dpd < 2:
                 pred_class = 2
-                overrides.append("⚠️ Borderline profile — downgraded from P4 to P3 (refer for credit committee review)")
+                overrides.append("⚠️ Borderline profile — P3 (refer for credit committee review)")
 
         # Final band after overrides
         band, stage, decision, color = band_map[pred_class]
-        if len(proba) == 4:
-            risk_score = float(proba[2] + proba[3])
-        else:
-            risk_score = float(1 - proba[1])
-        risk_score = float(np.clip(risk_score, 0.005, 0.995))
-        pd_score   = 1 - risk_score
+
+        # Sync risk_score with final band so PD % matches decision
+        band_pd_map = {0: 0.01, 1: 0.05, 2: 0.14, 3: 0.35}
+        risk_score = float(np.clip(
+            band_pd_map[pred_class] + (proba[pred_class] * 0.05),
+            0.005, 0.995
+        ))
+        pd_score = 1 - risk_score
 
         st.markdown("---")
         st.markdown("### Assessment Result")
