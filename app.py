@@ -427,9 +427,11 @@ elif page == "🎯 Credit Scorecard":
         band, stage, decision, color = band_map[pred_class]
 
         # PD = P3 + P4 probability (probability of being sub-prime or high risk)
-        risk_score = float(proba[2] + proba[3])
-        pd_score   = 1 - risk_score
-        raw_risk   = risk_score  # for debug
+        # Handle both binary and multiclass model outputs
+        if len(proba) == 4:
+            risk_score = float(proba[2] + proba[3])
+        else:
+            risk_score = float(1 - proba[1])
 
         # Model outputs are heavily skewed — remap to meaningful PD range
         # Raw risk near 0 → P1, near 1 → P4
@@ -499,7 +501,10 @@ elif page == "🎯 Credit Scorecard":
 
         # Final band after overrides
         band, stage, decision, color = band_map[pred_class]
-        risk_score = float(proba[2] + proba[3])
+        if len(proba) == 4:
+            risk_score = float(proba[2] + proba[3])
+        else:
+            risk_score = float(1 - proba[1])
         risk_score = float(np.clip(risk_score, 0.005, 0.995))
         pd_score   = 1 - risk_score
 
