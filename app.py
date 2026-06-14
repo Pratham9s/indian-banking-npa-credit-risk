@@ -275,30 +275,26 @@ elif page == "🤖 AI Event Explainer":
             psu_context = f"PSU GNPA: {psu_val:.2f}%" if isinstance(psu_val, float) else ""
             pvt_context = f"Private GNPA: {pvt_val:.2f}%" if isinstance(pvt_val, float) else ""
 
-            prompt = f"""You are a senior credit risk analyst at a leading Indian bank, with deep knowledge of RBI policy, Indian macroeconomics, and banking sector history.
+            prompt = f"""You are a senior credit risk analyst specialising in Indian banking.
 
-Analyse the NPA movement for Indian Scheduled Commercial Banks in FY{selected_year}-{str(selected_year+1)[-2:]}.
+Analyse NPA movement for Indian SCBs in FY{selected_year}-{str(selected_year+1)[-2:]}.
 
-DATA FOR THIS YEAR:
-- All SCB Gross NPA %: {row['gnpa_pct_advances']:.2f}%
-- Year-on-year change: {yoy_change:+.2f} percentage points ({direction})
-- Previous year GNPA: {prev_row['gnpa_pct_advances']:.2f}% (FY{int(prev_row['year_int'])}-{str(int(prev_row['year_int'])+1)[-2:]})
+DATA:
+- All SCB GNPA: {row['gnpa_pct_advances']:.2f}%
+- YoY change: {yoy_change:+.2f}pp ({direction})
+- Previous year: {prev_row['gnpa_pct_advances']:.2f}%
 - {psu_context}
 - {pvt_context}
 
-Provide a structured analysis covering:
+Respond in exactly this structure, each section 3-4 lines:
 
-1. HEADLINE VERDICT (1 sentence — what the NPA number tells us about this year)
+1. HEADLINE VERDICT
+2. MAJOR EVENTS & SHOCKS (2-3 specific events with NPA impact)
+3. RBI & GOVERNMENT POLICY ACTIONS (2-3 specific policies/circulars)
+4. PSU vs PRIVATE DIVERGENCE
+5. FORWARD IMPLICATION
 
-2. MAJOR EVENTS & SHOCKS (identify 2-4 real events — economic, political, global — that directly impacted credit quality this year, with specific impact on NPAs)
-
-3. RBI & GOVERNMENT POLICY ACTIONS (identify 2-3 specific policies, circulars, or regulatory actions in this period and their effect on reported NPAs)
-
-4. PSU vs PRIVATE DIVERGENCE (explain any difference in how these two groups were affected)
-
-5. FORWARD IMPLICATION (what did this year set up for the next 1-2 years in terms of credit risk)
-
-Be specific — mention actual policy names, event dates, sector-wise stress where relevant. Keep each section concise (3-5 lines). Do not use generic filler language."""
+Be specific — name actual policies, dates, sectors. No filler language."""
 
             with st.spinner("Gemini is analysing this year's macro context..."):
                 try:
@@ -306,7 +302,7 @@ Be specific — mention actual policy names, event dates, sector-wise stress whe
                     headers = {"Content-Type": "application/json"}
                     payload = {
                         "contents": [{"parts": [{"text": prompt}]}],
-                        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2000}
+                        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8192}
                     }
                     resp = requests.post(f"{url}?key={GEMINI_KEY}", headers=headers, json=payload, timeout=30)
                     resp.raise_for_status()
