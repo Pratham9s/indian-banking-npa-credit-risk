@@ -326,206 +326,169 @@ Be specific — name actual policies, dates, sectors. No filler language."""
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "🎯 Credit Scorecard":
     st.title("Credit Risk Scorecard — Applicant PD Predictor")
-    st.caption("Upload a CSV with full bureau data for accurate prediction, or use manual entry for an indicative score.")
+    st.caption("Fill in the details below. The XGBoost model predicts probability of default and assigns an ECL stage.")
 
     if not MODEL_OK:
-        st.warning("""
-        **Model files not found.** Place the following in a `models/` folder next to `app.py`:
-        - `xgb_model.pkl`
-        - `scaler.pkl`  
-        - `feature_cols.pkl`
-        Then restart the app.
-        """)
+        st.warning("Model files not found. Place xgb_model.pkl, scaler.pkl, feature_cols.pkl in the models/ folder.")
         st.stop()
 
     st.markdown('<div class="section-header">Risk Band Reference</div>', unsafe_allow_html=True)
-    demo_data = {
-        'Score Band': ['P1 — Prime', 'P2 — Near-Prime', 'P3 — Sub-Prime', 'P4 — High Risk'],
+    ref_data = {
+        'Band': ['P1 — Prime', 'P2 — Near-Prime', 'P3 — Sub-Prime', 'P4 — High Risk'],
         'PD Range': ['< 2%', '2% – 8%', '8% – 20%', '> 20%'],
         'ECL Stage': ['Stage 1', 'Stage 1', 'Stage 2', 'Stage 3'],
-        'Provisioning': ['12-month ECL', '12-month ECL', 'Lifetime ECL', 'Lifetime ECL (credit-impaired)'],
+        'Provisioning': ['12-month ECL', '12-month ECL', 'Lifetime ECL', 'Lifetime ECL (impaired)'],
         'Decision': ['✅ Approve', '✅ Approve with monitoring', '⚠️ Refer for review', '❌ Decline']
     }
-    st.dataframe(pd.DataFrame(demo_data), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(ref_data), use_container_width=True, hide_index=True)
     st.markdown("---")
 
-    tab1, tab2 = st.tabs(["📁 CSV Upload (Full Model — Accurate)", "✏️ Manual Entry (Indicative Only)"])
+    st.markdown('<div class="section-header">Applicant Profile</div>', unsafe_allow_html=True)
 
-    with tab1:
-        st.markdown("""
-        **How to use:**
-        - Upload a CSV with one or more applicant rows containing all 85 bureau features
-        - Use your `Unseen_Dataset.xlsx` converted to CSV as a sample input
-        - Model runs on complete data → accurate PD scores and risk bands
-        """)
+    with st.form("scorecard_form"):
+        c1, c2, c3 = st.columns(3)
 
-        template_df  = pd.DataFrame(columns=feature_cols)
-        template_csv = template_df.to_csv(index=False)
-        st.download_button("⬇️ Download CSV Template (85 features)", template_csv, "applicant_template.csv", "text/csv")
+        with c1:
+            st.markdown("**Personal Details**")
+            age       = st.slider("Age", 21, 65, 35)
+            gender    = st.selectbox("Gender", ["M", "F"])
+            marital   = st.selectbox("Marital Status", ["Married", "Single", "Divorced"])
+            education = st.selectbox("Education", ["Graduate", "Post-Graduate", "12TH", "SSC", "OTHERS"])
+            income    = st.number_input("Net Monthly Income (₹)", 10000, 500000, 50000, step=5000)
+            time_empr = st.slider("Years with Current Employer", 0, 40, 3)
 
-        uploaded_file = st.file_uploader("Upload Applicant CSV", type=["csv"])
+        with c2:
+            st.markdown("**Loan & Product**")
+            loan_type   = st.selectbox("Loan Type Applying For", ["PL", "HL", "AL", "CC", "others"])
+            cc_flag     = st.selectbox("Do you have a Credit Card?", ["Yes", "No"])
+            pl_flag     = st.selectbox("Do you have a Personal Loan?", ["Yes", "No"])
+            hl_flag     = st.selectbox("Do you have a Home Loan?", ["Yes", "No"])
+            gl_flag     = st.selectbox("Do you have a Gold Loan?", ["Yes", "No"])
+            cc_util     = st.slider("Credit Card Utilization % (approx)", 0, 100, 30)
+            pl_util     = st.slider("Personal Loan Outstanding % of limit", 0, 100, 20)
 
-        if uploaded_file:
-            try:
-                input_df = pd.read_csv(uploaded_file)
-                st.success(f"Loaded {len(input_df)} applicant(s) — {input_df.shape[1]} columns detected")
+        with c3:
+            st.markdown("**Credit History**")
+            credit_score  = st.slider("CIBIL Score (check on CIBIL/BankBazaar app)", 300, 900, 720)
+            total_tl      = st.slider("Total Loans/Cards Ever", 0, 30, 5)
+            active_tl     = st.slider("Currently Active Loans/Cards", 0, 20, 3)
+            closed_tl     = st.slider("Closed/Settled Loans", 0, 20, 2)
+            missed_pmnt   = st.slider("Total Missed EMI Payments (ever)", 0, 30, 0)
+            num_deliq     = st.slider("Times Account went Delinquent (ever)", 0, 20, 0)
+            num_30dpd     = st.slider("Times 30+ Days Past Due", 0, 15, 0)
+            num_60dpd     = st.slider("Times 60+ Days Past Due", 0, 10, 0)
+            enq_l3m       = st.slider("Loan Enquiries in Last 3 Months", 0, 10, 1)
+            enq_l6m       = st.slider("Loan Enquiries in Last 6 Months", 0, 15, 2)
+            enq_l12m      = st.slider("Loan Enquiries in Last 12 Months", 0, 20, 3)
 
-                enc_map = {
-                    'MARITALSTATUS':   {'Married': 1, 'Single': 2, 'Divorced': 0},
-                    'EDUCATION':       {'Graduate': 0, 'Post-Graduate': 1, 'SSC': 2, '12TH': 3, 'OTHERS': 4},
-                    'GENDER':          {'M': 1, 'F': 0},
-                    'last_prod_enq2':  {'PL': 3, 'AL': 0, 'HL': 2, 'CC': 1, 'others': 4},
-                    'first_prod_enq2': {'PL': 3, 'AL': 0, 'HL': 2, 'CC': 1, 'others': 4},
-                }
+        submitted = st.form_submit_button("🔍 Assess Credit Risk", type="primary", use_container_width=True)
 
-                proc_df = input_df.copy()
-                for col, mapping in enc_map.items():
-                    if col in proc_df.columns:
-                        proc_df[col] = proc_df[col].map(mapping).fillna(0)
+    if submitted:
+        input_dict = {col: 0 for col in feature_cols}
 
-                for col in feature_cols:
-                    if col not in proc_df.columns:
-                        proc_df[col] = 0
-                proc_df = proc_df[feature_cols].fillna(0)
+        # Personal
+        input_dict['AGE']              = age
+        input_dict['NETMONTHLYINCOME'] = income
+        input_dict['GENDER']           = 1 if gender == "M" else 0
+        input_dict['MARITALSTATUS']    = {'Married': 1, 'Single': 2, 'Divorced': 0}[marital]
+        input_dict['EDUCATION']        = {'Graduate': 0, 'Post-Graduate': 1, '12TH': 3, 'SSC': 2, 'OTHERS': 4}[education]
+        input_dict['Time_With_Curr_Empr'] = time_empr * 12
 
-                pd_scores   = xgb_model.predict_proba(proc_df)[:, 1]
-                risk_scores = 1 - pd_scores
+        # Loan & product
+        prod_map = {'PL': 3, 'HL': 2, 'AL': 0, 'CC': 1, 'others': 4}
+        input_dict['last_prod_enq2']  = prod_map[loan_type]
+        input_dict['first_prod_enq2'] = prod_map[loan_type]
+        input_dict['CC_Flag']         = 1 if cc_flag == "Yes" else 0
+        input_dict['PL_Flag']         = 1 if pl_flag == "Yes" else 0
+        input_dict['HL_Flag']         = 1 if hl_flag == "Yes" else 0
+        input_dict['GL_Flag']         = 1 if gl_flag == "Yes" else 0
+        input_dict['CC_utilization']  = cc_util
+        input_dict['PL_utilization']  = pl_util
 
-                def assign_band(rs):
-                    if rs < 0.02:   return 'P1 — Prime', 'Stage 1', '✅ Approve'
-                    elif rs < 0.08: return 'P2 — Near-Prime', 'Stage 1', '✅ Approve with monitoring'
-                    elif rs < 0.20: return 'P3 — Sub-Prime', 'Stage 2', '⚠️ Refer for review'
-                    else:           return 'P4 — High Risk', 'Stage 3', '❌ Decline'
+        # Trade lines
+        input_dict['Total_TL']        = total_tl
+        input_dict['Tot_Active_TL']   = active_tl
+        input_dict['Tot_Closed_TL']   = closed_tl
+        input_dict['Secured_TL']      = 1 if hl_flag == "Yes" or gl_flag == "Yes" else 0
+        input_dict['Unsecured_TL']    = 1 if cc_flag == "Yes" or pl_flag == "Yes" else 0
+        input_dict['CC_TL']           = 1 if cc_flag == "Yes" else 0
+        input_dict['PL_TL']           = 1 if pl_flag == "Yes" else 0
+        input_dict['Home_TL']         = 1 if hl_flag == "Yes" else 0
+        input_dict['Gold_TL']         = 1 if gl_flag == "Yes" else 0
+        input_dict['pct_active_tl']   = (active_tl / total_tl * 100) if total_tl > 0 else 0
+        input_dict['pct_closed_tl']   = (closed_tl / total_tl * 100) if total_tl > 0 else 0
 
-                bands     = [assign_band(r) for r in risk_scores]
-                result_df = input_df.copy()
-                result_df['PD (%)']        = (risk_scores * 100).round(2)
-                result_df['Creditworthy (%)'] = (pd_scores * 100).round(2)
-                result_df['Risk Band']     = [b[0] for b in bands]
-                result_df['ECL Stage']     = [b[1] for b in bands]
-                result_df['Decision']      = [b[2] for b in bands]
+        # Delinquency
+        input_dict['Tot_Missed_Pmnt']      = missed_pmnt
+        input_dict['num_times_delinquent'] = num_deliq
+        input_dict['num_times_30p_dpd']    = num_30dpd
+        input_dict['num_times_60p_dpd']    = num_60dpd
+        input_dict['num_deliq_6mts']       = min(num_deliq, 2)
+        input_dict['num_deliq_12mts']      = num_deliq
+        input_dict['max_delinquency_level'] = 3 if num_60dpd > 0 else (2 if num_30dpd > 0 else (1 if num_deliq > 0 else 0))
+        input_dict['recent_level_of_deliq'] = input_dict['max_delinquency_level']
 
-                st.markdown('<div class="section-header">Prediction Results</div>', unsafe_allow_html=True)
-                c1, c2, c3, c4 = st.columns(4)
-                approve_count = len([b for b in bands if b[0] in ['P1 — Prime', 'P2 — Near-Prime']])
-                review_count  = len([b for b in bands if 'P3' in b[0]])
-                decline_count = len([b for b in bands if 'P4' in b[0]])
-                with c1: st.metric("Total Applicants", len(result_df))
-                with c2: st.metric("✅ Approve", approve_count)
-                with c3: st.metric("⚠️ Review", review_count)
-                with c4: st.metric("❌ Decline", decline_count)
+        # Enquiries
+        input_dict['enq_L3m']  = enq_l3m
+        input_dict['enq_L6m']  = enq_l6m
+        input_dict['enq_L12m'] = enq_l12m
+        input_dict['tot_enq']  = enq_l12m
+        input_dict['CC_enq']   = enq_l12m if loan_type == "CC" else 0
+        input_dict['PL_enq']   = enq_l12m if loan_type == "PL" else 0
+        input_dict['CC_enq_L6m']  = enq_l6m if loan_type == "CC" else 0
+        input_dict['PL_enq_L6m']  = enq_l6m if loan_type == "PL" else 0
+        input_dict['CC_enq_L12m'] = enq_l12m if loan_type == "CC" else 0
+        input_dict['PL_enq_L12m'] = enq_l12m if loan_type == "PL" else 0
 
-                display_cols = [c for c in ['AGE', 'GENDER', 'NETMONTHLYINCOME', 'Credit_Score', 'EDUCATION', 'MARITALSTATUS'] if c in result_df.columns]
-                display_cols += ['PD (%)', 'Creditworthy (%)', 'Risk Band', 'ECL Stage', 'Decision']
-                st.dataframe(result_df[display_cols], use_container_width=True, hide_index=True)
+        # Derived ratios
+        input_dict['pct_of_active_TLs_ever']    = (active_tl / total_tl * 100) if total_tl > 0 else 0
+        input_dict['max_unsec_exposure_inPct']   = max(cc_util, pl_util)
+        input_dict['pct_PL_enq_L6m_of_L12m']    = (enq_l6m / enq_l12m * 100) if enq_l12m > 0 else 0
+        input_dict['pct_CC_enq_L6m_of_L12m']    = (enq_l6m / enq_l12m * 100) if enq_l12m > 0 else 0
 
-                band_counts = pd.Series([b[0] for b in bands]).value_counts()
-                fig_b, ax_b = plt.subplots(figsize=(8, 3.5))
-                fig_b.patch.set_facecolor('white')
-                colors_b = {'P1 — Prime': '#27ae60', 'P2 — Near-Prime': '#2ecc71', 'P3 — Sub-Prime': '#e67e22', 'P4 — High Risk': '#e74c3c'}
-                bar_colors = [colors_b.get(b, 'gray') for b in band_counts.index]
-                ax_b.bar(band_counts.index, band_counts.values, color=bar_colors, edgecolor='white', width=0.5)
-                for bar, val in zip(ax_b.patches, band_counts.values):
-                    ax_b.text(bar.get_x()+bar.get_width()/2, bar.get_height()+0.3, str(val), ha='center', fontweight='bold')
-                ax_b.set_ylabel('Count'); ax_b.set_title('Risk Band Distribution', fontweight='bold')
-                ax_b.grid(axis='y', alpha=0.3)
-                ax_b.spines['top'].set_visible(False); ax_b.spines['right'].set_visible(False)
-                plt.tight_layout()
-                st.pyplot(fig_b)
+        # Credit score
+        input_dict['Credit_Score'] = credit_score
 
-                csv_out = result_df[display_cols].to_csv(index=False)
-                st.download_button("⬇️ Download Results CSV", csv_out, "risk_assessment_results.csv", "text/csv")
+        # Predict
+        pred_df    = pd.DataFrame([input_dict])[feature_cols]
+        pd_score   = xgb_model.predict_proba(pred_df)[0][1]
+        risk_score = 1 - pd_score
 
-            except Exception as e:
-                st.error(f"Error processing file: {e}")
+        if risk_score < 0.02:   band, stage, decision, color = "P1 — Prime", "Stage 1", "✅ Approve", "#27ae60"
+        elif risk_score < 0.08: band, stage, decision, color = "P2 — Near-Prime", "Stage 1", "✅ Approve with monitoring", "#2ecc71"
+        elif risk_score < 0.20: band, stage, decision, color = "P3 — Sub-Prime", "Stage 2", "⚠️ Refer for review", "#e67e22"
+        else:                   band, stage, decision, color = "P4 — High Risk", "Stage 3", "❌ Decline", "#e74c3c"
 
-    with tab2:
-        st.info("⚠️ Manual entry uses ~18 of 85 model features. Results are indicative only — upload a full bureau CSV for accurate assessment.")
+        st.markdown("---")
+        st.markdown("### Assessment Result")
 
-        with st.form("scorecard_form"):
-            c1, c2, c3 = st.columns(3)
+        r1, r2, r3, r4 = st.columns(4)
+        with r1: st.metric("Probability of Default", f"{risk_score*100:.1f}%")
+        with r2: st.metric("Creditworthiness Score", f"{pd_score*100:.1f}%")
+        with r3: st.metric("Risk Band", band.split("—")[0].strip())
+        with r4: st.metric("ECL Stage", stage)
 
-            with c1:
-                st.markdown("**Personal Info**")
-                age       = st.slider("Age", 21, 65, 35)
-                income    = st.number_input("Net Monthly Income (₹)", 10000, 500000, 50000, step=5000)
-                education = st.selectbox("Education", ["Graduate", "Post-Graduate", "SSC", "12TH", "OTHERS"])
-                gender    = st.selectbox("Gender", ["M", "F"])
-                marital   = st.selectbox("Marital Status", ["Married", "Single", "Divorced"])
-                time_empr = st.slider("Years with Current Employer", 0, 30, 3)
+        st.markdown(f'''<div class="ecl-box">
+        <b>Decision:</b> {decision} &nbsp;|&nbsp; <b>Band:</b> {band} &nbsp;|&nbsp;
+        <b>ECL Stage:</b> {stage} &nbsp;|&nbsp; <b>PD:</b> {risk_score*100:.2f}%
+        </div>''', unsafe_allow_html=True)
 
-            with c2:
-                st.markdown("**Credit Behaviour**")
-                credit_score = st.slider("CIBIL Credit Score", 300, 900, 720)
-                missed_pmnt  = st.slider("Total Missed Payments", 0, 30, 0)
-                tot_tl       = st.slider("Total Trade Lines", 0, 30, 5)
-                active_tl    = st.slider("Active Trade Lines", 0, 20, 3)
-                tot_tl_l6m   = st.slider("New Trade Lines (Last 6M)", 0, 10, 1)
-                num_deliq    = st.slider("Times Delinquent (Ever)", 0, 20, 0)
-                num_30dpd    = st.slider("Times 30+ DPD", 0, 15, 0)
-                num_60dpd    = st.slider("Times 60+ DPD", 0, 10, 0)
+        col_g, col_r = st.columns([1, 1])
+        with col_g:
+            fig_g, ax_g = plt.subplots(figsize=(6, 3), subplot_kw={'projection': 'polar'})
+            fig_g.patch.set_facecolor('white')
+            for seg, col_s in zip([(0,0.25),(0.25,0.5),(0.5,0.75),(0.75,1.0)],
+                                   ['#27ae60','#f1c40f','#e67e22','#e74c3c']):
+                ax_g.fill_between(np.linspace(seg[0]*np.pi, seg[1]*np.pi, 50), 0.7, 1.0, color=col_s, alpha=0.85)
+            needle = risk_score * np.pi
+            ax_g.annotate('', xy=(needle, 0.65), xytext=(needle, 0.0),
+                          arrowprops=dict(arrowstyle='->', color='black', lw=2.5))
+            ax_g.set_ylim(0, 1.1); ax_g.set_yticks([]); ax_g.set_xticks([])
+            ax_g.spines['polar'].set_visible(False)
+            ax_g.set_title(f'Risk Score: {risk_score*100:.1f}%', fontsize=13, fontweight='bold', pad=15)
+            st.pyplot(fig_g)
 
-            with c3:
-                st.markdown("**Loan & Enquiry Details**")
-                loan_type  = st.selectbox("Product Enquired", ["PL", "AL", "HL", "CC", "others"])
-                loan_amount= st.number_input("Loan Amount Requested (₹)", 10000, 10000000, 500000, step=10000)
-                cc_util    = st.slider("Credit Card Utilization %", 0, 100, 30)
-                pl_util    = st.slider("Personal Loan Utilization %", 0, 100, 20)
-                enq_l6m    = st.slider("Enquiries Last 6 Months", 0, 15, 2)
-                enq_l12m   = st.slider("Enquiries Last 12 Months", 0, 20, 3)
-                cc_flag    = st.selectbox("Has Credit Card?", [1, 0])
-                pl_flag    = st.selectbox("Has Personal Loan?", [1, 0])
-
-            submitted = st.form_submit_button("🔍 Get Indicative Risk Score", type="primary", use_container_width=True)
-
-        if submitted:
-            input_dict = {col: 0 for col in feature_cols}
-            input_dict['AGE']                 = age
-            input_dict['NETMONTHLYINCOME']     = income
-            input_dict['Credit_Score']         = credit_score
-            input_dict['Tot_Missed_Pmnt']      = missed_pmnt
-            input_dict['Total_TL']             = tot_tl
-            input_dict['Tot_Active_TL']        = active_tl
-            input_dict['Total_TL_opened_L6M']  = tot_tl_l6m
-            input_dict['num_times_delinquent'] = num_deliq
-            input_dict['num_times_30p_dpd']    = num_30dpd
-            input_dict['num_times_60p_dpd']    = num_60dpd
-            input_dict['CC_utilization']       = cc_util
-            input_dict['PL_utilization']       = pl_util
-            input_dict['enq_L6m']              = enq_l6m
-            input_dict['enq_L12m']             = enq_l12m
-            input_dict['CC_Flag']              = cc_flag
-            input_dict['PL_Flag']              = pl_flag
-            input_dict['Time_With_Curr_Empr']  = time_empr * 12
-            input_dict['EDUCATION']            = {'Graduate': 0, 'Post-Graduate': 1, 'SSC': 2, '12TH': 3, 'OTHERS': 4}.get(education, 0)
-            input_dict['GENDER']               = {'M': 1, 'F': 0}.get(gender, 1)
-            input_dict['MARITALSTATUS']        = {'Married': 1, 'Single': 2, 'Divorced': 0}.get(marital, 1)
-            input_dict['last_prod_enq2']       = {'PL': 3, 'AL': 0, 'HL': 2, 'CC': 1, 'others': 4}.get(loan_type, 4)
-            input_dict['first_prod_enq2']      = input_dict['last_prod_enq2']
-
-            pred_df    = pd.DataFrame([input_dict])[feature_cols]
-            pd_score   = xgb_model.predict_proba(pred_df)[0][1]
-            risk_score = 1 - pd_score
-
-            if risk_score < 0.02:   band, stage, decision = "P1 — Prime", "Stage 1", "✅ Approve"
-            elif risk_score < 0.08: band, stage, decision = "P2 — Near-Prime", "Stage 1", "✅ Approve with monitoring"
-            elif risk_score < 0.20: band, stage, decision = "P3 — Sub-Prime", "Stage 2", "⚠️ Refer for review"
-            else:                   band, stage, decision = "P4 — High Risk", "Stage 3", "❌ Decline"
-
-            st.markdown("---")
-            st.markdown("### Indicative Assessment")
-            r1, r2, r3, r4 = st.columns(4)
-            with r1: st.metric("Probability of Default", f"{risk_score*100:.1f}%")
-            with r2: st.metric("Creditworthiness", f"{pd_score*100:.1f}%")
-            with r3: st.metric("Risk Band", band.split("—")[0].strip())
-            with r4: st.metric("ECL Stage", stage)
-
-            lti = loan_amount / income if income > 0 else 0
-            st.caption(f"Loan: ₹{loan_amount:,.0f} | Income: ₹{income:,.0f}/mo | LTI Ratio: {lti:.1f}x")
-            st.markdown(f'''
-            <div class="ecl-box">
-            <b>Decision:</b> {decision} &nbsp;|&nbsp; <b>Band:</b> {band} &nbsp;|&nbsp; <b>ECL Stage:</b> {stage} &nbsp;|&nbsp; <b>PD:</b> {risk_score*100:.2f}%
-            </div>''', unsafe_allow_html=True)
+        with col_r:
             st.markdown(f"""
             **RBI ECL Implications:**
             - **Stage:** {stage}
@@ -533,7 +496,13 @@ elif page == "🎯 Credit Scorecard":
             - **SICR Trigger:** {"None — performing asset" if "Stage 1" in stage else "Significant increase in credit risk detected"}
             - **Decision:** {decision}
 
-            ⚠️ *Indicative score using 18 of 85 model features. Upload full bureau CSV for accurate assessment.*
+            **Key Risk Drivers:**
+            - CIBIL Score: {credit_score} {"✅ Good" if credit_score >= 750 else "⚠️ Fair" if credit_score >= 650 else "❌ Poor"}
+            - Missed Payments: {missed_pmnt} {"✅" if missed_pmnt == 0 else "❌"}
+            - Delinquencies: {num_deliq} {"✅" if num_deliq == 0 else "⚠️"}
+            - Enquiries (6M): {enq_l6m} {"✅" if enq_l6m <= 2 else "⚠️ High"}
+            - CC Utilization: {cc_util}% {"✅" if cc_util <= 30 else "⚠️ High"}
+
             *Per RBI ECL Final Directions, April 2026 (effective April 2027)*
             """)
 
