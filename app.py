@@ -72,16 +72,28 @@ st.markdown("""
 # ── Load data ─────────────────────────────────────────────────────────────────
 @st.cache_data
 def load_npa():
-    path = os.path.join(os.path.dirname(__file__), "data", "processed", "npa_cleaned.csv")
-    return pd.read_csv(path)
+    base = os.path.dirname(__file__)
+    # Try root first, then subfolders
+    for path in [
+        os.path.join(base, "npa_cleaned.csv"),
+        os.path.join(base, "data", "processed", "npa_cleaned.csv"),
+    ]:
+        if os.path.exists(path):
+            return pd.read_csv(path)
+    raise FileNotFoundError("npa_cleaned.csv not found")
 
 @st.cache_resource
 def load_model():
     base = os.path.dirname(__file__)
-    xgb     = joblib.load(os.path.join(base, "models", "xgb_model.pkl"))
-    scaler  = joblib.load(os.path.join(base, "models", "scaler.pkl"))
-    feat    = joblib.load(os.path.join(base, "models", "feature_cols.pkl"))
-    return xgb, scaler, feat
+    # Try root first, then models subfolder
+    for folder in [base, os.path.join(base, "models")]:
+        xgb_path = os.path.join(folder, "xgb_model.pkl")
+        if os.path.exists(xgb_path):
+            xgb    = joblib.load(xgb_path)
+            scaler = joblib.load(os.path.join(folder, "scaler.pkl"))
+            feat   = joblib.load(os.path.join(folder, "feature_cols.pkl"))
+            return xgb, scaler, feat
+    raise FileNotFoundError("Model files not found")
 
 try:
     npa = load_npa()
