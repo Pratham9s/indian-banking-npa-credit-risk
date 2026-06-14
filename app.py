@@ -487,11 +487,11 @@ elif page == "🎯 Credit Scorecard":
             pred_class = max(pred_class, 2)
             overrides.append(f"⚠️ CIBIL {credit_score} below recommended (650) — minimum P3")
 
-        # P1 vs P2 split — only trigger on genuinely elevated signals
+        # P1 vs P2 split — only trigger on clearly elevated signals
         if pred_class == 0:
-            if enq_l6m > 5 or cc_util > 60 or missed_pmnt >= 2:
+            if enq_l6m > 6 or cc_util > 70 or missed_pmnt >= 2:
                 pred_class = 1
-                overrides.append("⚠️ Good profile but elevated enquiries/utilization — P2 (approve with monitoring)")
+                overrides.append("⚠️ Elevated enquiries/utilization — P2 (approve with monitoring)")
 
         # P3 vs P4 split
         if pred_class == 3:
@@ -504,11 +504,8 @@ elif page == "🎯 Credit Scorecard":
 
         # Sync risk_score with final band so PD % matches decision
         band_pd_map = {0: 0.01, 1: 0.05, 2: 0.14, 3: 0.35}
-        risk_score = float(np.clip(
-            band_pd_map[pred_class] + (proba[pred_class] * 0.05),
-            0.005, 0.995
-        ))
-        pd_score = 1 - risk_score
+        risk_score = float(np.clip(band_pd_map[pred_class], 0.005, 0.995))
+        pd_score   = 1 - risk_score
 
         st.markdown("---")
         st.markdown("### Assessment Result")
