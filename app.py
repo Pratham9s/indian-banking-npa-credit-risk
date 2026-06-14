@@ -415,7 +415,40 @@ elif page == "🎯 Credit Scorecard":
         pred_df    = pd.DataFrame([input_dict])[feature_cols]
         pd_score   = xgb_model.predict_proba(pred_df)[0][1]
         risk_score = 1 - pd_score
-        # Cap to avoid misleading 0% or 100% display — reflects model uncertainty
+
+        # ── Rule-based override layer (mirrors real bank credit policy) ──
+        overrides = []
+
+        # LTI check — loan to monthly income ratio
+        lti = loan_amount / income if income > 0 else 0
+        if lti > 50:
+            risk_score = max(risk_score, 0.25)
+            overrides.append(f"❌ Loan-to-Income ratio {lti:.0f}x exceeds policy limit (max 50x monthly income)")
+        elif lti > 20:
+            risk_score = max(risk_score, 0.10)
+            overrides.append(f"⚠️ Loan-to-Income ratio {lti:.0f}x is elevated (recommended max 20x)")
+
+        # Missed payments override
+        if missed_pmnt >= 3:
+            risk_score = max(risk_score, 0.20)
+            overrides.append(f"❌ {missed_pmnt} missed payments — automatic Stage 2 floor")
+
+        # 60+ DPD override
+        if num_60dpd >= 2:
+            risk_score = max(risk_score, 0.25)
+            overrides.append(f"❌ {num_60dpd} instances of 60+ DPD — high delinquency risk")
+
+        # Enquiry burst override
+        if enq_l3m >= 5:
+            risk_score = max(risk_score, 0.10)
+            overrides.append(f"⚠️ {enq_l3m} enquiries in last 3 months — credit hunger signal")
+
+        # Low CIBIL hard floor
+        if credit_score < 600:
+            risk_score = max(risk_score, 0.30)
+            overrides.append(f"❌ CIBIL score {credit_score} below minimum threshold (600)")
+
+        # Cap display
         risk_score = float(np.clip(risk_score, 0.005, 0.995))
         pd_score   = 1 - risk_score
 
@@ -439,6 +472,11 @@ elif page == "🎯 Credit Scorecard":
         </div>''', unsafe_allow_html=True)
         lti = loan_amount / income if income > 0 else 0
         st.caption(f"Loan Requested: ₹{loan_amount:,.0f} | Monthly Income: ₹{income:,.0f} | Loan-to-Income Ratio: {lti:.1f}x")
+
+        if overrides:
+            st.markdown("**⚠️ Credit Policy Overrides Applied:**")
+            for o in overrides:
+                st.warning(o)
 
         gauge_col, info_col = st.columns([1, 1])
         with gauge_col:
