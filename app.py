@@ -433,18 +433,6 @@ elif page == "🎯 Credit Scorecard":
         else:
             risk_score = float(1 - proba[1])
 
-        # Model outputs are heavily skewed — remap to meaningful PD range
-        # Raw risk near 0 → P1, near 1 → P4
-        # Use piecewise linear rescaling calibrated to expected band distribution
-        def rescale_risk(r):
-            if r < 0.05:   return r * 0.4          # Very low raw → P1 (0-2%)
-            elif r < 0.20: return 0.02 + (r - 0.05) * 0.4   # Low → P2 (2-8%)
-            elif r < 0.50: return 0.08 + (r - 0.20) * 0.4   # Mid → P3 (8-20%)
-            else:          return 0.20 + (r - 0.50) * 1.5   # High → P4 (20%+)
-
-        risk_score = float(np.clip(rescale_risk(raw_risk), 0.005, 0.995))
-        pd_score   = 1 - risk_score
-
         # Apply policy overrides on top of model prediction
         overrides = []
 
