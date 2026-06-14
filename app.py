@@ -359,8 +359,9 @@ elif page == "🎯 Credit Scorecard":
 
         with c2:
             st.markdown("**Loan & Product**")
-            loan_type   = st.selectbox("Loan Type Applying For", ["PL", "HL", "AL", "CC", "others"])
-            cc_flag     = st.selectbox("Do you have a Credit Card?", ["Yes", "No"])
+            loan_type    = st.selectbox("Loan Type Applying For", ["PL", "HL", "AL", "CC", "others"])
+            loan_amount  = st.number_input("Loan Amount Requested (₹)", 10000, 10000000, 500000, step=10000)
+            cc_flag      = st.selectbox("Do you have a Credit Card?", ["Yes", "No"])
             pl_flag     = st.selectbox("Do you have a Personal Loan?", ["Yes", "No"])
             hl_flag     = st.selectbox("Do you have a Home Loan?", ["Yes", "No"])
             gl_flag     = st.selectbox("Do you have a Gold Loan?", ["Yes", "No"])
@@ -472,8 +473,8 @@ elif page == "🎯 Credit Scorecard":
         <b>Decision:</b> {decision} &nbsp;|&nbsp; <b>Band:</b> {band} &nbsp;|&nbsp;
         <b>ECL Stage:</b> {stage} &nbsp;|&nbsp; <b>PD:</b> {risk_score*100:.2f}%
         </div>''', unsafe_allow_html=True)
-
-        col_g, col_r = st.columns([1, 1])
+        lti = loan_amount / income if income > 0 else 0
+        st.caption(f"Loan Requested: ₹{loan_amount:,.0f} | Monthly Income: ₹{income:,.0f} | Loan-to-Income Ratio: {lti:.1f}x")
         with col_g:
             fig_g, ax_g = plt.subplots(figsize=(6, 3), subplot_kw={'projection': 'polar'})
             fig_g.patch.set_facecolor('white')
