@@ -418,20 +418,16 @@ elif page == "🎯 Credit Scorecard":
         raw_prob   = xgb_model.predict_proba(pred_df)[0][1]  # P(creditworthy)
         raw_risk   = 1 - raw_prob
 
-        # Rescale: model is heavily skewed toward extremes due to 74% creditworthy
-        # training distribution. Apply sigmoid rescaling to spread across P1-P4.
-        # Calibrated so: raw<0.05→P1, raw 0.05-0.3→P2, raw 0.3-0.6→P3, raw>0.6→P4
-        import math
+        # Model outputs are heavily skewed — remap to meaningful PD range
+        # Raw risk near 0 → P1, near 1 → P4
+        # Use piecewise linear rescaling calibrated to expected band distribution
         def rescale_risk(r):
-            # Stretch the middle range using log-odds transformation
-            if r <= 0: return 0.01
-            if r >= 1: return 0.99
-            log_odds = math.log(r / (1 - r))
-            # Shift center and compress extremes
-            adjusted = 1 / (1 + math.exp(-(log_odds + 1.5) * 0.7))
-            return float(np.clip(adjusted, 0.005, 0.995))
+            if r < 0.05:   return r * 0.4          # Very low raw → P1 (0-2%)
+            elif r < 0.20: return 0.02 + (r - 0.05) * 0.4   # Low → P2 (2-8%)
+            elif r < 0.50: return 0.08 + (r - 0.20) * 0.4   # Mid → P3 (8-20%)
+            else:          return 0.20 + (r - 0.50) * 1.5   # High → P4 (20%+)
 
-        risk_score = rescale_risk(raw_risk)
+        risk_score = float(np.clip(rescale_risk(raw_risk), 0.005, 0.995))
         pd_score   = 1 - risk_score
 
         # ── Rule-based override layer (mirrors real bank credit policy) ──
@@ -446,7 +442,7 @@ elif page == "🎯 Credit Scorecard":
         emi_to_income = emi / income if income > 0 else 999
         lti = loan_amount / income if income > 0 else 0
 
-        # LTI + EMI rules
+        # LTI rules
         if lti > 50:
             risk_score = max(risk_score, 0.95)
             overrides.append(f"❌ Loan-to-Income ratio {lti:.0f}x is extreme — near-certain decline (policy max: 50x)")
@@ -454,32 +450,39 @@ elif page == "🎯 Credit Scorecard":
             risk_score = max(risk_score, 0.10)
             overrides.append(f"⚠️ Loan-to-Income ratio {lti:.0f}x is elevated (recommended max: 20x)")
 
+        # FOIR rules
         if emi_to_income > 0.60:
             risk_score = max(risk_score, 0.85)
-            overrides.append(f"❌ EMI ₹{emi:,.0f}/month = {emi_to_income*100:.0f}% of income — exceeds 60% FOIR limit (near-certain decline)")
+            overrides.append(f"❌ EMI ₹{emi:,.0f}/month = {emi_to_income*100:.0f}% of income — exceeds 60% FOIR limit")
         elif emi_to_income > 0.40:
-            risk_score = max(risk_score, 0.20)
+            risk_score = max(risk_score, 0.15)
             overrides.append(f"⚠️ EMI ₹{emi:,.0f}/month = {emi_to_income*100:.0f}% of income — exceeds 40% FOIR threshold")
 
-        # Missed payments override
-        if missed_pmnt >= 3:
-            risk_score = max(risk_score, 0.20)
-            overrides.append(f"❌ {missed_pmnt} missed payments — automatic Stage 2 floor")
-
-        # 60+ DPD override
-        if num_60dpd >= 2:
+        # Missed payments — only trigger at 4+ not 3
+        if missed_pmnt >= 4:
             risk_score = max(risk_score, 0.25)
-            overrides.append(f"❌ {num_60dpd} instances of 60+ DPD — high delinquency risk")
-
-        # Enquiry burst override
-        if enq_l3m >= 5:
+            overrides.append(f"❌ {missed_pmnt} missed payments — high delinquency risk")
+        elif missed_pmnt >= 2:
             risk_score = max(risk_score, 0.10)
+            overrides.append(f"⚠️ {missed_pmnt} missed payments noted")
+
+        # 60+ DPD override — only at 3+
+        if num_60dpd >= 3:
+            risk_score = max(risk_score, 0.25)
+            overrides.append(f"❌ {num_60dpd} instances of 60+ DPD — serious delinquency history")
+
+        # Enquiry burst — only at 7+ in 3M
+        if enq_l3m >= 7:
+            risk_score = max(risk_score, 0.15)
             overrides.append(f"⚠️ {enq_l3m} enquiries in last 3 months — credit hunger signal")
 
         # Low CIBIL hard floor
         if credit_score < 600:
             risk_score = max(risk_score, 0.30)
             overrides.append(f"❌ CIBIL score {credit_score} below minimum threshold (600)")
+        elif credit_score < 650:
+            risk_score = max(risk_score, 0.15)
+            overrides.append(f"⚠️ CIBIL score {credit_score} is below recommended minimum (650)")
 
         # Cap display
         risk_score = float(np.clip(risk_score, 0.005, 0.995))
