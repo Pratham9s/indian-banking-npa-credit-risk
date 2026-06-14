@@ -415,8 +415,9 @@ elif page == "🎯 Credit Scorecard":
 
         # Predict
         pred_df    = pd.DataFrame([input_dict])[feature_cols]
-        raw_prob   = xgb_model.predict_proba(pred_df)[0][1]  # P(creditworthy)
+        raw_prob   = xgb_model.predict_proba(pred_df)[0][1]
         raw_risk   = 1 - raw_prob
+        st.info(f"DEBUG — raw_prob (creditworthy): {raw_prob:.6f} | raw_risk: {raw_risk:.6f}")
 
         # Model outputs are heavily skewed — remap to meaningful PD range
         # Raw risk near 0 → P1, near 1 → P4
