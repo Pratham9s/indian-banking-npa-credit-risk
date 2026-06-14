@@ -85,14 +85,12 @@ def load_npa():
 @st.cache_resource
 def load_model():
     base = os.path.dirname(__file__)
-    # Try root first, then models subfolder
     for folder in [base, os.path.join(base, "models")]:
-        xgb_path = os.path.join(folder, "xgb_model.pkl")
+        xgb_path = os.path.join(folder, "xgb_model_lite.pkl")
         if os.path.exists(xgb_path):
-            xgb    = joblib.load(xgb_path)
-            scaler = joblib.load(os.path.join(folder, "scaler.pkl"))
-            feat   = joblib.load(os.path.join(folder, "feature_cols.pkl"))
-            return xgb, scaler, feat
+            xgb  = joblib.load(xgb_path)
+            feat = joblib.load(os.path.join(folder, "feature_cols_lite.pkl"))
+            return xgb, None, feat
     raise FileNotFoundError("Model files not found")
 
 try:
@@ -385,70 +383,33 @@ elif page == "🎯 Credit Scorecard":
         submitted = st.form_submit_button("🔍 Assess Credit Risk", type="primary", use_container_width=True)
 
     if submitted:
-        input_dict = {col: 0 for col in feature_cols}
-
-        # Personal
-        input_dict['AGE']              = age
-        input_dict['NETMONTHLYINCOME'] = income
-        input_dict['GENDER']           = 1 if gender == "M" else 0
-        input_dict['MARITALSTATUS']    = {'Married': 1, 'Single': 2, 'Divorced': 0}[marital]
-        input_dict['EDUCATION']        = {'Graduate': 0, 'Post-Graduate': 1, '12TH': 3, 'SSC': 2, 'OTHERS': 4}[education]
-        input_dict['Time_With_Curr_Empr'] = time_empr * 12
-
-        # Loan & product
-        prod_map = {'PL': 3, 'HL': 2, 'AL': 0, 'CC': 1, 'others': 4}
-        input_dict['last_prod_enq2']  = prod_map[loan_type]
-        input_dict['first_prod_enq2'] = prod_map[loan_type]
-        input_dict['CC_Flag']         = 1 if cc_flag == "Yes" else 0
-        input_dict['PL_Flag']         = 1 if pl_flag == "Yes" else 0
-        input_dict['HL_Flag']         = 1 if hl_flag == "Yes" else 0
-        input_dict['GL_Flag']         = 1 if gl_flag == "Yes" else 0
-        input_dict['CC_utilization']  = cc_util
-        input_dict['PL_utilization']  = pl_util
-
-        # Trade lines
-        input_dict['Total_TL']        = total_tl
-        input_dict['Tot_Active_TL']   = active_tl
-        input_dict['Tot_Closed_TL']   = closed_tl
-        input_dict['Secured_TL']      = 1 if hl_flag == "Yes" or gl_flag == "Yes" else 0
-        input_dict['Unsecured_TL']    = 1 if cc_flag == "Yes" or pl_flag == "Yes" else 0
-        input_dict['CC_TL']           = 1 if cc_flag == "Yes" else 0
-        input_dict['PL_TL']           = 1 if pl_flag == "Yes" else 0
-        input_dict['Home_TL']         = 1 if hl_flag == "Yes" else 0
-        input_dict['Gold_TL']         = 1 if gl_flag == "Yes" else 0
-        input_dict['pct_active_tl']   = (active_tl / total_tl * 100) if total_tl > 0 else 0
-        input_dict['pct_closed_tl']   = (closed_tl / total_tl * 100) if total_tl > 0 else 0
-
-        # Delinquency
-        input_dict['Tot_Missed_Pmnt']      = missed_pmnt
-        input_dict['num_times_delinquent'] = num_deliq
-        input_dict['num_times_30p_dpd']    = num_30dpd
-        input_dict['num_times_60p_dpd']    = num_60dpd
-        input_dict['num_deliq_6mts']       = min(num_deliq, 2)
-        input_dict['num_deliq_12mts']      = num_deliq
-        input_dict['max_delinquency_level'] = 3 if num_60dpd > 0 else (2 if num_30dpd > 0 else (1 if num_deliq > 0 else 0))
-        input_dict['recent_level_of_deliq'] = input_dict['max_delinquency_level']
-
-        # Enquiries
-        input_dict['enq_L3m']  = enq_l3m
-        input_dict['enq_L6m']  = enq_l6m
-        input_dict['enq_L12m'] = enq_l12m
-        input_dict['tot_enq']  = enq_l12m
-        input_dict['CC_enq']   = enq_l12m if loan_type == "CC" else 0
-        input_dict['PL_enq']   = enq_l12m if loan_type == "PL" else 0
-        input_dict['CC_enq_L6m']  = enq_l6m if loan_type == "CC" else 0
-        input_dict['PL_enq_L6m']  = enq_l6m if loan_type == "PL" else 0
-        input_dict['CC_enq_L12m'] = enq_l12m if loan_type == "CC" else 0
-        input_dict['PL_enq_L12m'] = enq_l12m if loan_type == "PL" else 0
-
-        # Derived ratios
-        input_dict['pct_of_active_TLs_ever']    = (active_tl / total_tl * 100) if total_tl > 0 else 0
-        input_dict['max_unsec_exposure_inPct']   = max(cc_util, pl_util)
-        input_dict['pct_PL_enq_L6m_of_L12m']    = (enq_l6m / enq_l12m * 100) if enq_l12m > 0 else 0
-        input_dict['pct_CC_enq_L6m_of_L12m']    = (enq_l6m / enq_l12m * 100) if enq_l12m > 0 else 0
-
-        # Credit score
-        input_dict['Credit_Score'] = credit_score
+        input_dict = {
+            'Credit_Score':         credit_score,
+            'enq_L3m':              enq_l3m,
+            'enq_L6m':              enq_l6m,
+            'enq_L12m':             enq_l12m,
+            'num_deliq_12mts':      num_deliq,
+            'num_times_60p_dpd':    num_60dpd,
+            'num_times_30p_dpd':    num_30dpd,
+            'Tot_Missed_Pmnt':      missed_pmnt,
+            'num_times_delinquent': num_deliq,
+            'Tot_Active_TL':        active_tl,
+            'Total_TL':             total_tl,
+            'Tot_Closed_TL':        closed_tl,
+            'CC_utilization':       cc_util,
+            'PL_utilization':       pl_util,
+            'AGE':                  age,
+            'NETMONTHLYINCOME':     income,
+            'Time_With_Curr_Empr':  time_empr * 12,
+            'CC_Flag':              1 if cc_flag == "Yes" else 0,
+            'PL_Flag':              1 if pl_flag == "Yes" else 0,
+            'HL_Flag':              1 if hl_flag == "Yes" else 0,
+            'GL_Flag':              1 if gl_flag == "Yes" else 0,
+            'MARITALSTATUS':        {'Married': 1, 'Single': 2, 'Divorced': 0}[marital],
+            'EDUCATION':            {'Graduate': 0, 'Post-Graduate': 1, '12TH': 3, 'SSC': 2, 'OTHERS': 4}[education],
+            'GENDER':               1 if gender == "M" else 0,
+            'last_prod_enq2':       {'PL': 3, 'HL': 2, 'AL': 0, 'CC': 1, 'others': 4}[loan_type],
+        }
 
         # Predict
         pred_df    = pd.DataFrame([input_dict])[feature_cols]
