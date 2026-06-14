@@ -454,6 +454,9 @@ elif page == "🎯 Credit Scorecard":
         pred_df    = pd.DataFrame([input_dict])[feature_cols]
         pd_score   = xgb_model.predict_proba(pred_df)[0][1]
         risk_score = 1 - pd_score
+        # Cap to avoid misleading 0% or 100% display — reflects model uncertainty
+        risk_score = float(np.clip(risk_score, 0.005, 0.995))
+        pd_score   = 1 - risk_score
 
         if risk_score < 0.02:   band, stage, decision, color = "P1 — Prime", "Stage 1", "✅ Approve", "#27ae60"
         elif risk_score < 0.08: band, stage, decision, color = "P2 — Near-Prime", "Stage 1", "✅ Approve with monitoring", "#2ecc71"
@@ -475,12 +478,14 @@ elif page == "🎯 Credit Scorecard":
         </div>''', unsafe_allow_html=True)
         lti = loan_amount / income if income > 0 else 0
         st.caption(f"Loan Requested: ₹{loan_amount:,.0f} | Monthly Income: ₹{income:,.0f} | Loan-to-Income Ratio: {lti:.1f}x")
-        with col_g:
+
+        gauge_col, info_col = st.columns([1, 1])
+        with gauge_col:
             fig_g, ax_g = plt.subplots(figsize=(6, 3), subplot_kw={'projection': 'polar'})
             fig_g.patch.set_facecolor('white')
-            for seg, col_s in zip([(0,0.25),(0.25,0.5),(0.5,0.75),(0.75,1.0)],
-                                   ['#27ae60','#f1c40f','#e67e22','#e74c3c']):
-                ax_g.fill_between(np.linspace(seg[0]*np.pi, seg[1]*np.pi, 50), 0.7, 1.0, color=col_s, alpha=0.85)
+            for seg, seg_col in zip([(0,0.25),(0.25,0.5),(0.5,0.75),(0.75,1.0)],
+                                    ['#27ae60','#f1c40f','#e67e22','#e74c3c']):
+                ax_g.fill_between(np.linspace(seg[0]*np.pi, seg[1]*np.pi, 50), 0.7, 1.0, color=seg_col, alpha=0.85)
             needle = risk_score * np.pi
             ax_g.annotate('', xy=(needle, 0.65), xytext=(needle, 0.0),
                           arrowprops=dict(arrowstyle='->', color='black', lw=2.5))
@@ -489,7 +494,7 @@ elif page == "🎯 Credit Scorecard":
             ax_g.set_title(f'Risk Score: {risk_score*100:.1f}%', fontsize=13, fontweight='bold', pad=15)
             st.pyplot(fig_g)
 
-        with col_r:
+        with info_col:
             st.markdown(f"""
             **RBI ECL Implications:**
             - **Stage:** {stage}
