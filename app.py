@@ -414,10 +414,22 @@ elif page == "🎯 Credit Scorecard":
         }
 
         # Predict
-        pred_df    = pd.DataFrame([input_dict])[feature_cols]
-        raw_prob   = xgb_model.predict_proba(pred_df)[0][1]
-        raw_risk   = 1 - raw_prob
-        st.info(f"DEBUG — raw_prob (creditworthy): {raw_prob:.6f} | raw_risk: {raw_risk:.6f}")
+        pred_df  = pd.DataFrame([input_dict])[feature_cols]
+        proba    = xgb_model.predict_proba(pred_df)[0]  # [P1, P2, P3, P4] probabilities
+        pred_class = int(np.argmax(proba))
+
+        # Map class to band
+        band_map = {0: ("P1 — Prime", "Stage 1", "✅ Approve", "#27ae60"),
+                    1: ("P2 — Near-Prime", "Stage 1", "✅ Approve with monitoring", "#2ecc71"),
+                    2: ("P3 — Sub-Prime", "Stage 2", "⚠️ Refer for review", "#e67e22"),
+                    3: ("P4 — High Risk", "Stage 3", "❌ Decline", "#e74c3c")}
+
+        band, stage, decision, color = band_map[pred_class]
+
+        # PD = P3 + P4 probability (probability of being sub-prime or high risk)
+        risk_score = float(proba[2] + proba[3])
+        pd_score   = 1 - risk_score
+        raw_risk   = risk_score  # for debug
 
         # Model outputs are heavily skewed — remap to meaningful PD range
         # Raw risk near 0 → P1, near 1 → P4
@@ -431,7 +443,7 @@ elif page == "🎯 Credit Scorecard":
         risk_score = float(np.clip(rescale_risk(raw_risk), 0.005, 0.995))
         pd_score   = 1 - risk_score
 
-        # ── Rule-based override layer (mirrors real bank credit policy) ──
+        # Apply policy overrides on top of model prediction
         overrides = []
 
         # EMI affordability check
@@ -445,54 +457,51 @@ elif page == "🎯 Credit Scorecard":
 
         # LTI rules
         if lti > 50:
-            risk_score = max(risk_score, 0.95)
-            overrides.append(f"❌ Loan-to-Income ratio {lti:.0f}x is extreme — near-certain decline (policy max: 50x)")
+            pred_class = 3
+            overrides.append(f"❌ Loan-to-Income ratio {lti:.0f}x is extreme — override to P4 (policy max: 50x)")
         elif lti > 20:
-            risk_score = max(risk_score, 0.10)
-            overrides.append(f"⚠️ Loan-to-Income ratio {lti:.0f}x is elevated (recommended max: 20x)")
+            pred_class = max(pred_class, 2)
+            overrides.append(f"⚠️ Loan-to-Income ratio {lti:.0f}x elevated — minimum P3 applied")
 
         # FOIR rules
         if emi_to_income > 0.60:
-            risk_score = max(risk_score, 0.85)
-            overrides.append(f"❌ EMI ₹{emi:,.0f}/month = {emi_to_income*100:.0f}% of income — exceeds 60% FOIR limit")
+            pred_class = 3
+            overrides.append(f"❌ EMI ₹{emi:,.0f}/mo = {emi_to_income*100:.0f}% of income — exceeds 60% FOIR limit")
         elif emi_to_income > 0.40:
-            risk_score = max(risk_score, 0.15)
-            overrides.append(f"⚠️ EMI ₹{emi:,.0f}/month = {emi_to_income*100:.0f}% of income — exceeds 40% FOIR threshold")
+            pred_class = max(pred_class, 2)
+            overrides.append(f"⚠️ EMI ₹{emi:,.0f}/mo = {emi_to_income*100:.0f}% of income — exceeds 40% FOIR")
 
-        # Missed payments — only trigger at 4+ not 3
+        # Missed payments
         if missed_pmnt >= 4:
-            risk_score = max(risk_score, 0.25)
-            overrides.append(f"❌ {missed_pmnt} missed payments — high delinquency risk")
+            pred_class = max(pred_class, 3)
+            overrides.append(f"❌ {missed_pmnt} missed payments — override to P4")
         elif missed_pmnt >= 2:
-            risk_score = max(risk_score, 0.10)
-            overrides.append(f"⚠️ {missed_pmnt} missed payments noted")
+            pred_class = max(pred_class, 2)
+            overrides.append(f"⚠️ {missed_pmnt} missed payments — minimum P3 applied")
 
-        # 60+ DPD override — only at 3+
+        # 60+ DPD
         if num_60dpd >= 3:
-            risk_score = max(risk_score, 0.25)
-            overrides.append(f"❌ {num_60dpd} instances of 60+ DPD — serious delinquency history")
+            pred_class = max(pred_class, 3)
+            overrides.append(f"❌ {num_60dpd} instances of 60+ DPD — override to P4")
 
-        # Enquiry burst — only at 7+ in 3M
+        # Enquiry burst
         if enq_l3m >= 7:
-            risk_score = max(risk_score, 0.15)
-            overrides.append(f"⚠️ {enq_l3m} enquiries in last 3 months — credit hunger signal")
+            pred_class = max(pred_class, 2)
+            overrides.append(f"⚠️ {enq_l3m} enquiries in 3 months — credit hunger signal")
 
-        # Low CIBIL hard floor
+        # CIBIL floor
         if credit_score < 600:
-            risk_score = max(risk_score, 0.30)
-            overrides.append(f"❌ CIBIL score {credit_score} below minimum threshold (600)")
+            pred_class = max(pred_class, 3)
+            overrides.append(f"❌ CIBIL {credit_score} below minimum (600) — override to P4")
         elif credit_score < 650:
-            risk_score = max(risk_score, 0.15)
-            overrides.append(f"⚠️ CIBIL score {credit_score} is below recommended minimum (650)")
+            pred_class = max(pred_class, 2)
+            overrides.append(f"⚠️ CIBIL {credit_score} below recommended (650) — minimum P3")
 
-        # Cap display
+        # Final band after overrides
+        band, stage, decision, color = band_map[pred_class]
+        risk_score = float(proba[2] + proba[3])
         risk_score = float(np.clip(risk_score, 0.005, 0.995))
         pd_score   = 1 - risk_score
-
-        if risk_score < 0.02:   band, stage, decision, color = "P1 — Prime", "Stage 1", "✅ Approve", "#27ae60"
-        elif risk_score < 0.08: band, stage, decision, color = "P2 — Near-Prime", "Stage 1", "✅ Approve with monitoring", "#2ecc71"
-        elif risk_score < 0.20: band, stage, decision, color = "P3 — Sub-Prime", "Stage 2", "⚠️ Refer for review", "#e67e22"
-        else:                   band, stage, decision, color = "P4 — High Risk", "Stage 3", "❌ Decline", "#e74c3c"
 
         st.markdown("---")
         st.markdown("### Assessment Result")
