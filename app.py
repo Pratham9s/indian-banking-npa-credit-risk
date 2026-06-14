@@ -359,6 +359,8 @@ elif page == "🎯 Credit Scorecard":
             st.markdown("**Loan & Product**")
             loan_type    = st.selectbox("Loan Type Applying For", ["PL", "HL", "AL", "CC", "others"])
             loan_amount  = st.number_input("Loan Amount Requested (₹)", 10000, 10000000, 500000, step=10000)
+            interest_rate = st.slider("Interest Rate (% per annum)", 6.0, 36.0, 12.0, step=0.5)
+            tenure       = st.slider("Loan Tenure (months)", 6, 360, 60)
             cc_flag      = st.selectbox("Do you have a Credit Card?", ["Yes", "No"])
             pl_flag     = st.selectbox("Do you have a Personal Loan?", ["Yes", "No"])
             hl_flag     = st.selectbox("Do you have a Home Loan?", ["Yes", "No"])
@@ -419,14 +421,29 @@ elif page == "🎯 Credit Scorecard":
         # ── Rule-based override layer (mirrors real bank credit policy) ──
         overrides = []
 
-        # LTI check — loan to monthly income ratio
+        # EMI affordability check
+        rate_monthly = interest_rate / 100 / 12
+        if rate_monthly > 0:
+            emi = loan_amount * rate_monthly * (1 + rate_monthly)**tenure / ((1 + rate_monthly)**tenure - 1)
+        else:
+            emi = loan_amount / tenure
+        emi_to_income = emi / income if income > 0 else 999
         lti = loan_amount / income if income > 0 else 0
+
+        # LTI + EMI rules
         if lti > 50:
-            risk_score = max(risk_score, 0.25)
-            overrides.append(f"❌ Loan-to-Income ratio {lti:.0f}x exceeds policy limit (max 50x monthly income)")
+            risk_score = max(risk_score, 0.95)
+            overrides.append(f"❌ Loan-to-Income ratio {lti:.0f}x is extreme — near-certain decline (policy max: 50x)")
         elif lti > 20:
             risk_score = max(risk_score, 0.10)
-            overrides.append(f"⚠️ Loan-to-Income ratio {lti:.0f}x is elevated (recommended max 20x)")
+            overrides.append(f"⚠️ Loan-to-Income ratio {lti:.0f}x is elevated (recommended max: 20x)")
+
+        if emi_to_income > 0.60:
+            risk_score = max(risk_score, 0.85)
+            overrides.append(f"❌ EMI ₹{emi:,.0f}/month = {emi_to_income*100:.0f}% of income — exceeds 60% FOIR limit (near-certain decline)")
+        elif emi_to_income > 0.40:
+            risk_score = max(risk_score, 0.20)
+            overrides.append(f"⚠️ EMI ₹{emi:,.0f}/month = {emi_to_income*100:.0f}% of income — exceeds 40% FOIR threshold")
 
         # Missed payments override
         if missed_pmnt >= 3:
@@ -470,8 +487,7 @@ elif page == "🎯 Credit Scorecard":
         <b>Decision:</b> {decision} &nbsp;|&nbsp; <b>Band:</b> {band} &nbsp;|&nbsp;
         <b>ECL Stage:</b> {stage} &nbsp;|&nbsp; <b>PD:</b> {risk_score*100:.2f}%
         </div>''', unsafe_allow_html=True)
-        lti = loan_amount / income if income > 0 else 0
-        st.caption(f"Loan Requested: ₹{loan_amount:,.0f} | Monthly Income: ₹{income:,.0f} | Loan-to-Income Ratio: {lti:.1f}x")
+        st.caption(f"Loan: ₹{loan_amount:,.0f} | Rate: {interest_rate}% p.a. | Tenure: {tenure}M | EMI: ₹{emi:,.0f}/mo | Income: ₹{income:,.0f}/mo | FOIR: {emi_to_income*100:.1f}% | LTI: {lti:.1f}x")
 
         if overrides:
             st.markdown("**⚠️ Credit Policy Overrides Applied:**")
