@@ -416,12 +416,53 @@ elif page == "🎯 Credit Scorecard":
         # Predict
         pred_df  = pd.DataFrame([input_dict])[feature_cols]
         proba    = xgb_model.predict_proba(pred_df)[0]
-        pred_class = int(np.argmax(proba))
 
-        # Hard P1 rule — clearly prime profiles the model undersells
-        if (credit_score >= 750 and missed_pmnt == 0 and num_deliq == 0
-                and enq_l3m <= 2 and cc_util <= 40 and num_60dpd == 0):
-            pred_class = 0
+        # ── Rule-based scoring system ─────────────────────────────────────
+        # Score each factor, sum up, assign band
+        score = 0
+
+        # CIBIL Score (0-40 points)
+        if credit_score >= 750:   score += 40
+        elif credit_score >= 700: score += 30
+        elif credit_score >= 650: score += 15
+        elif credit_score >= 620: score += 5
+        else:                     score += 0
+
+        # Missed Payments (0-20 points)
+        if missed_pmnt == 0:   score += 20
+        elif missed_pmnt == 1: score += 12
+        elif missed_pmnt <= 3: score += 4
+        else:                  score += 0
+
+        # Delinquencies (0-15 points)
+        if num_deliq == 0:   score += 15
+        elif num_deliq == 1: score += 8
+        elif num_deliq == 2: score += 2
+        else:                score += 0
+
+        # Enquiries last 3M (0-10 points)
+        if enq_l3m <= 1:   score += 10
+        elif enq_l3m <= 3: score += 6
+        elif enq_l3m <= 6: score += 2
+        else:              score += 0
+
+        # 60+ DPD (0-10 points)
+        if num_60dpd == 0:   score += 10
+        elif num_60dpd == 1: score += 4
+        else:                score += 0
+
+        # CC Utilization (0-5 points)
+        if cc_util <= 30:   score += 5
+        elif cc_util <= 50: score += 3
+        elif cc_util <= 70: score += 1
+        else:               score += 0
+
+        # Total score out of 100 → band
+        # P1: 75-100, P2: 50-74, P3: 25-49, P4: 0-24
+        if score >= 75:   pred_class = 0
+        elif score >= 50: pred_class = 1
+        elif score >= 25: pred_class = 2
+        else:             pred_class = 3
 
         # Map class to band
         band_map = {0: ("P1 — Prime", "Stage 1", "✅ Approve", "#27ae60"),
@@ -557,10 +598,11 @@ elif page == "🎯 Credit Scorecard":
 
             **Key Risk Drivers:**
             - CIBIL Score: {credit_score} {"✅ Good" if credit_score >= 750 else "⚠️ Fair" if credit_score >= 650 else "❌ Poor"}
-            - Missed Payments: {missed_pmnt} {"✅" if missed_pmnt == 0 else "❌"}
-            - Delinquencies: {num_deliq} {"✅" if num_deliq == 0 else "⚠️"}
-            - Enquiries (6M): {enq_l6m} {"✅" if enq_l6m <= 2 else "⚠️ High"}
-            - CC Utilization: {cc_util}% {"✅" if cc_util <= 30 else "⚠️ High"}
+            - Missed Payments: {missed_pmnt} {"✅" if missed_pmnt == 0 else "⚠️" if missed_pmnt <= 2 else "❌"}
+            - Delinquencies: {num_deliq} {"✅" if num_deliq == 0 else "⚠️" if num_deliq <= 2 else "❌"}
+            - Enquiries (3M): {enq_l3m} {"✅" if enq_l3m <= 2 else "⚠️ Elevated" if enq_l3m <= 5 else "❌ High"}
+            - CC Utilization: {cc_util}% {"✅" if cc_util <= 30 else "⚠️ Elevated" if cc_util <= 60 else "❌ High"}
+            - Credit Score (out of 100): {score}/100
 
             *Per RBI ECL Final Directions, April 2026 (effective April 2027)*
             """)
