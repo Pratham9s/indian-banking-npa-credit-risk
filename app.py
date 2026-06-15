@@ -459,9 +459,9 @@ elif page == "🎯 Credit Scorecard":
 
         # Total score out of 100 → band
         # P1: 75-100, P2: 50-74, P3: 25-49, P4: 0-24
-        if score >= 75:   pred_class = 0
-        elif score >= 50: pred_class = 1
-        elif score >= 25: pred_class = 2
+        if score >= 80:   pred_class = 0
+        elif score >= 65: pred_class = 1
+        elif score >= 55: pred_class = 2
         else:             pred_class = 3
 
         # Map class to band
