@@ -415,8 +415,13 @@ elif page == "🎯 Credit Scorecard":
 
         # Predict
         pred_df  = pd.DataFrame([input_dict])[feature_cols]
-        proba    = xgb_model.predict_proba(pred_df)[0]  # [P1, P2, P3, P4] probabilities
+        proba    = xgb_model.predict_proba(pred_df)[0]
         pred_class = int(np.argmax(proba))
+
+        # Hard P1 rule — clearly prime profiles the model undersells
+        if (credit_score >= 750 and missed_pmnt == 0 and num_deliq == 0
+                and enq_l3m <= 2 and cc_util <= 40 and num_60dpd == 0):
+            pred_class = 0
 
         # Map class to band
         band_map = {0: ("P1 — Prime", "Stage 1", "✅ Approve", "#27ae60"),
