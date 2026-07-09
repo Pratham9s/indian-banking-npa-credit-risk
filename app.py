@@ -305,7 +305,7 @@ Be specific — name actual policies, dates, sectors. No filler language."""
             else:
                 with st.spinner("Gemini is analysing this year's macro context..."):
                     try:
-                        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+                        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
                         headers = {"Content-Type": "application/json"}
                         payload = {
                             "contents": [{"parts": [{"text": prompt}]}],
